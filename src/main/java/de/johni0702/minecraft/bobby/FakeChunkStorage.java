@@ -106,6 +106,7 @@ public class FakeChunkStorage extends VersionedChunkStorage {
     }
 
     private final Path directory;
+    private final boolean writeable;
     private final AtomicBoolean sentUpgradeNotification = new AtomicBoolean();
     @Nullable
     private final LastAccessFile lastAccess;
@@ -114,6 +115,7 @@ public class FakeChunkStorage extends VersionedChunkStorage {
         super(directory, MinecraftClient.getInstance().getDataFixer(), false);
 
         this.directory = directory;
+        this.writeable = writeable;
 
         LastAccessFile lastAccess = null;
         if (writeable) {
@@ -162,7 +164,7 @@ public class FakeChunkStorage extends VersionedChunkStorage {
             if (sentUpgradeNotification.compareAndSet(false, true)) {
                 MinecraftClient client = MinecraftClient.getInstance();
                 client.submit(() -> {
-                    TranslatableText text = new TranslatableText("bobby.upgrade.required");
+                    TranslatableText text = new TranslatableText(writeable ? "bobby.upgrade.required" : "bobby.upgrade.fallback_world");
                     client.submit(() -> client.inGameHud.addChatMessage(MessageType.SYSTEM, text, Util.NIL_UUID));
                 });
             }
