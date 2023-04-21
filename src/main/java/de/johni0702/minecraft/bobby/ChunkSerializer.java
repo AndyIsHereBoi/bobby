@@ -1,44 +1,85 @@
-package de.johni0702.minecraft.bobby;
-
-import com.mojang.serialization.Codec;
-import de.johni0702.minecraft.bobby.ext.ChunkLightProviderExt;
-import net.minecraft.SharedConstants;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtElement;
-import net.minecraft.nbt.NbtList;
-import net.minecraft.nbt.NbtLongArray;
-import net.minecraft.nbt.NbtOps;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.ChunkPos;
-import net.minecraft.util.math.ChunkSectionPos;
-import net.minecraft.util.registry.Registry;
-import net.minecraft.util.registry.RegistryEntry;
-import net.minecraft.world.Heightmap;
-import net.minecraft.world.LightType;
-import net.minecraft.world.World;
-import net.minecraft.world.biome.Biome;
-import net.minecraft.world.biome.BiomeKeys;
-import net.minecraft.world.chunk.ChunkManager;
-import net.minecraft.world.chunk.ChunkNibbleArray;
-import net.minecraft.world.chunk.ChunkSection;
-import net.minecraft.world.chunk.PalettedContainer;
-import net.minecraft.world.chunk.WorldChunk;
-import net.minecraft.world.chunk.light.LightingProvider;
-import org.apache.commons.lang3.tuple.Pair;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-import org.jetbrains.annotations.Nullable;
-
-import java.util.Arrays;
-import java.util.EnumSet;
-import java.util.Map;
-import java.util.Objects;
-import java.util.function.Supplier;
-
-public class ChunkSerializer {
+package de.johni0702.minecraft.bobby;
+
+
+
+import com.mojang.serialization.Codec;
+
+import de.johni0702.minecraft.bobby.ext.ChunkLightProviderExt;
+
+import net.minecraft.SharedConstants;
+
+import net.minecraft.block.Block;
+
+import net.minecraft.block.BlockState;
+
+import net.minecraft.block.Blocks;
+
+import net.minecraft.nbt.NbtCompound;
+
+import net.minecraft.nbt.NbtElement;
+
+import net.minecraft.nbt.NbtList;
+
+import net.minecraft.nbt.NbtLongArray;
+
+import net.minecraft.nbt.NbtOps;
+
+import net.minecraft.util.math.BlockPos;
+
+import net.minecraft.util.math.ChunkPos;
+
+import net.minecraft.util.math.ChunkSectionPos;
+
+import net.minecraft.util.registry.Registry;
+
+import net.minecraft.util.registry.RegistryEntry;
+
+import net.minecraft.world.Heightmap;
+
+import net.minecraft.world.LightType;
+
+import net.minecraft.world.World;
+
+import net.minecraft.world.biome.Biome;
+
+import net.minecraft.world.biome.BiomeKeys;
+
+import net.minecraft.world.chunk.ChunkManager;
+
+import net.minecraft.world.chunk.ChunkNibbleArray;
+
+import net.minecraft.world.chunk.ChunkSection;
+
+import net.minecraft.world.chunk.PalettedContainer;
+
+import net.minecraft.world.chunk.WorldChunk;
+
+import net.minecraft.world.chunk.light.LightingProvider;
+
+import org.apache.commons.lang3.tuple.Pair;
+
+import org.apache.logging.log4j.LogManager;
+
+import org.apache.logging.log4j.Logger;
+
+import org.jetbrains.annotations.Nullable;
+
+
+
+import java.util.Arrays;
+
+import java.util.EnumSet;
+
+import java.util.Map;
+
+import java.util.Objects;
+
+import java.util.function.Supplier;
+
+
+
+public class ChunkSerializer {
+
     private static final Logger LOGGER = LogManager.getLogger();
     private static final ChunkNibbleArray COMPLETELY_DARK = new ChunkNibbleArray();
     private static final ChunkNibbleArray COMPLETELY_LIT = new ChunkNibbleArray();
@@ -313,6 +354,14 @@ public class ChunkSerializer {
         };
     }
 
+    // Note: This method is called asynchronously, so any methods called must either be verified to be thread safe (and
+    //       must be unlikely to loose that thread safety in the presence of third party mods) or must be delayed
+    //       by moving them into the returned supplier which is executed on the main thread.
+    //       For performance reasons though: The more stuff we can do async, the better.
+    // This method is called before the original chunk is unloaded and needs to return a supplier
+    // that can be called after the chunk has been unloaded to load a fake chunk in its place.
+    // It also returns a fake chunk immediately that isn't loaded into the game (yet) but can safely
+    // be serialized on another thread.
     public static Pair<WorldChunk, Supplier<WorldChunk>> shallowCopy(WorldChunk original) {
         BobbyConfig config = Bobby.getInstance().getConfig();
 
