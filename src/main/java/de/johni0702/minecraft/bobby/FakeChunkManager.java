@@ -265,19 +265,19 @@ public class FakeChunkManager {
     }
 
     // 1.18.2 keeps the synchronous storage API (it only became async in MC 1.19), so unlike upstream
-    // this stays a plain blocking lookup instead of returning a CompletableFuture.
-    private @Nullable Pair<NbtCompound, FakeChunkStorage> loadTag(int x, int z) {
+    // this stays a plain blocking lookup and just returns the tag directly.
+    private @Nullable NbtCompound loadTag(int x, int z) {
         ChunkPos chunkPos = new ChunkPos(x, z);
         NbtCompound tag;
         try {
             tag = storage.loadTag(chunkPos);
             if (tag != null) {
-                return Pair.of(tag, storage);
+                return tag;
             }
             if (fallbackStorage != null) {
                 tag = fallbackStorage.loadTag(chunkPos);
                 if (tag != null) {
-                    return Pair.of(tag, fallbackStorage);
+                    return tag;
                 }
             }
         } catch (IOException e) {
@@ -389,7 +389,7 @@ public class FakeChunkManager {
                 return;
             }
             result = Optional.ofNullable(loadTag(x, z))
-                    .map(it -> ChunkSerializer.deserialize(new ChunkPos(x, z), it.getLeft(), world));
+                    .map(it -> ChunkSerializer.deserialize(new ChunkPos(x, z), it, world));
         }
 
         public void complete() {
