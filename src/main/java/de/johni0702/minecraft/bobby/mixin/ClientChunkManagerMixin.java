@@ -58,6 +58,11 @@ public abstract class ClientChunkManagerMixin implements ClientChunkManagerExt {
         return bobbyChunkManager;
     }
 
+    @Override
+    public VisibleChunksTracker bobby_getRealChunksTracker() {
+        return realChunksTracker;
+    }
+
     @Inject(method = "getChunk(IILnet/minecraft/world/chunk/ChunkStatus;Z)Lnet/minecraft/world/chunk/WorldChunk;", at = @At("RETURN"), cancellable = true)
     private void bobbyGetChunk(int x, int z, ChunkStatus chunkStatus, boolean orEmpty, CallbackInfoReturnable<WorldChunk> ci) {
         // Did we find a live chunk?
@@ -95,11 +100,21 @@ public abstract class ClientChunkManagerMixin implements ClientChunkManagerExt {
         // It looks like it's supposed to be idempotent (and ran even when the chunk fails to parse), so we'll just call
         // it here as well and thereby cancel out the above unload.
         bobby_onFakeChunkAdded(x, z);
-
-        // Stage 3 NOTE: when the multi-world `fingerprint(chunk)` call is ported, it must be guarded with
-        // `WorldChunk chunk = cir.getReturnValue(); if (chunk == null) return;` - that is the other half of
-        // upstream's fix for #313 (server sending an out-of-bounds chunk leaves the return value null).
         bobby_resumeChunkStatusListener();
+    }
+
+    @Inject(method = "loadChunkFromPacket", at = @At("RETURN"))
+    private void bobbyFingerprintRealChunk(CallbackInfoReturnable<WorldChunk> cir) {
+        if (bobbyChunkManager == null) {
+            return;
+        }
+
+        WorldChunk chunk = cir.getReturnValue();
+        if (chunk == null) {
+            // Can happen when the server sends an out-of-bounds chunk (upstream fix for #313)
+            return;
+        }
+        bobbyChunkManager.fingerprint(chunk);
     }
 
     @Unique

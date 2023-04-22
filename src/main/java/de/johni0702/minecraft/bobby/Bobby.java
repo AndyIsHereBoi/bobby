@@ -1,9 +1,10 @@
 package de.johni0702.minecraft.bobby;
 
 import ca.stellardrift.confabricate.Confabricate;
-import com.google.common.io.MoreFiles;
-import com.google.common.io.RecursiveDeleteOption;
+import de.johni0702.minecraft.bobby.commands.CreateWorldCommand;
+import de.johni0702.minecraft.bobby.commands.MergeWorldsCommand;
 import de.johni0702.minecraft.bobby.commands.UpgradeCommand;
+import de.johni0702.minecraft.bobby.commands.WorldsCommand;
 import de.johni0702.minecraft.bobby.ext.ClientChunkManagerExt;
 import de.johni0702.minecraft.bobby.util.FlawlessFrames;
 import net.fabricmc.api.ClientModInitializer;
@@ -25,10 +26,13 @@ import org.spongepowered.configurate.reference.WatchServiceListener;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static com.mojang.brigadier.arguments.IntegerArgumentType.integer;
+import static net.fabricmc.fabric.api.client.command.v1.ClientCommandManager.argument;
 import static net.fabricmc.fabric.api.client.command.v1.ClientCommandManager.literal;
 
 public class Bobby implements ClientModInitializer {
@@ -59,6 +63,14 @@ public class Bobby implements ClientModInitializer {
         }
 
         ClientCommandManager.DISPATCHER.register(literal("bobby")
+                .then(literal("worlds").executes(new WorldsCommand(false))
+                        .then(literal("full").executes(new WorldsCommand(true)))
+                        .then(literal("merge")
+                                .then(argument("source", integer())
+                                        .then(argument("target", integer())
+                                                .executes(new MergeWorldsCommand()))))
+                        .then(literal("create").executes(new CreateWorldCommand()))
+                )
                 .then(literal("upgrade").executes(new UpgradeCommand()))
         );
 
@@ -99,13 +111,41 @@ public class Bobby implements ClientModInitializer {
         try (Stream<Path> stream = Files.walk(basePath, 4)) {
             toBeDeleted = stream
                     .filter(it -> basePath.relativize(it).getNameCount() == 4)
-                    .filter(it -> {
+                    .flatMap(directory -> {
                         try {
-                            return LastAccessFile.isEverythingOlderThan(it, deleteUnusedRegionsAfterDays);
+                            if (Files.exists(Worlds.metaFile(directory))) {
+                                List<Path> worlds;
+                                try (Stream<Path> fStream = Files.list(directory)) {
+                                    worlds = fStream.filter(Files::isDirectory).collect(Collectors.toList());
+                                }
+                                boolean stillHasWorlds = false;
+                                List<Path> toDelete = new ArrayList<>();
+                                for (Path world : worlds) {
+                                    if (LastAccessFile.isEverythingOlderThan(world, deleteUnusedRegionsAfterDays)) {
+                                        try (Stream<Path> fStream = Files.list(world)) {
+                                            fStream.forEach(toDelete::add);
+                                        }
+                                    } else {
+                                        stillHasWorlds = true;
+                                    }
+                                }
+                                if (!stillHasWorlds && LastAccessFile.isEverythingOlderThan(directory, deleteUnusedRegionsAfterDays)) {
+                                    try (Stream<Path> fStream = Files.list(directory)) {
+                                        fStream.forEach(toDelete::add);
+                                    }
+                                }
+                                return toDelete.stream();
+                            } else {
+                                if (LastAccessFile.isEverythingOlderThan(directory, deleteUnusedRegionsAfterDays)) {
+                                    try (Stream<Path> fStream = Files.list(directory)) {
+                                        return fStream.toList().stream();
+                                    }
+                                }
+                            }
                         } catch (IOException e) {
-                            LOGGER.error("Failed to read last used file in " + it + ":", e);
-                            return false;
+                            LOGGER.error("Failed to read last used file in " + directory + ":", e);
                         }
+                        return Stream.empty();
                     })
                     .collect(Collectors.toList());
         } catch (IOException e) {
@@ -114,10 +154,9 @@ public class Bobby implements ClientModInitializer {
         }
 
         for (Path path : toBeDeleted) {
+            if (!Files.exists(path)) continue;
             try {
-                //noinspection UnstableApiUsage
-                MoreFiles.deleteRecursively(path, RecursiveDeleteOption.ALLOW_INSECURE);
-
+                Files.delete(path);
                 deleteParentsIfEmpty(path);
             } catch (IOException e) {
                 LOGGER.error("Failed to delete " + path + ":", e);
