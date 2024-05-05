@@ -4,6 +4,7 @@ import de.johni0702.minecraft.bobby.ext.ChunkLightProviderExt;
 import de.johni0702.minecraft.bobby.ext.ClientChunkManagerExt;
 import de.johni0702.minecraft.bobby.ext.ClientPlayNetworkHandlerExt;
 import de.johni0702.minecraft.bobby.mixin.BiomeAccessAccessor;
+import de.johni0702.minecraft.bobby.util.FileSystemUtils;
 import io.netty.util.concurrent.DefaultThreadFactory;
 import it.unimi.dsi.fastutil.longs.Long2LongMap;
 import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
@@ -35,6 +36,8 @@ import org.apache.commons.lang3.tuple.Pair;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -95,13 +98,19 @@ public class FakeChunkManager {
         }
         BobbyConfig config = Bobby.getInstance().getConfig();
 
+        String serverName = getCurrentWorldOrServerName(((ClientWorldAccessor) world).getNetworkHandler());
         long seedHash = ((BiomeAccessAccessor) world.getBiomeAccess()).getSeed();
         RegistryKey<World> worldKey = world.getRegistryKey();
         Identifier worldId = worldKey.getValue();
         Path storagePath = client.runDirectory
                 .toPath()
-                .resolve(".bobby")
-                .resolve(serverName)
+                .resolve(".bobby");
+        if (oldFolderExists(storagePath, serverName)) {
+            storagePath = storagePath.resolve(serverName);
+        } else {
+            storagePath = FileSystemUtils.resolveSafeDirectoryName(storagePath, serverName);
+        }
+        storagePath = storagePath
                 .resolve(seedHash + "")
                 .resolve(worldId.getNamespace())
                 .resolve(worldId.getPath());
@@ -129,6 +138,14 @@ public class FakeChunkManager {
             } catch (Exception e) {
                 e.printStackTrace();
             }
+        }
+    }
+
+    private static boolean oldFolderExists(Path bobbyFolder, String name) {
+        try {
+            return Files.exists(bobbyFolder.resolve(name));
+        } catch (InvalidPathException e) {
+            return false;
         }
     }
 
