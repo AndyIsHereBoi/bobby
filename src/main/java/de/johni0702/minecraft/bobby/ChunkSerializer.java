@@ -1,83 +1,45 @@
 package de.johni0702.minecraft.bobby;
 
-
-
 import com.mojang.serialization.Codec;
-
 import de.johni0702.minecraft.bobby.ext.ChunkLightProviderExt;
-
+import de.johni0702.minecraft.bobby.ext.WorldChunkExt;
 import net.minecraft.SharedConstants;
-
 import net.minecraft.block.Block;
-
 import net.minecraft.block.BlockState;
-
 import net.minecraft.block.Blocks;
-
 import net.minecraft.nbt.NbtCompound;
-
 import net.minecraft.nbt.NbtElement;
-
 import net.minecraft.nbt.NbtList;
-
 import net.minecraft.nbt.NbtLongArray;
-
 import net.minecraft.nbt.NbtOps;
-
+import net.minecraft.network.packet.s2c.play.LightData;
 import net.minecraft.util.math.BlockPos;
-
 import net.minecraft.util.math.ChunkPos;
-
 import net.minecraft.util.math.ChunkSectionPos;
-
 import net.minecraft.util.registry.Registry;
-
 import net.minecraft.util.registry.RegistryEntry;
-
 import net.minecraft.world.Heightmap;
-
 import net.minecraft.world.LightType;
-
 import net.minecraft.world.World;
-
 import net.minecraft.world.biome.Biome;
-
 import net.minecraft.world.biome.BiomeKeys;
-
 import net.minecraft.world.chunk.ChunkManager;
-
 import net.minecraft.world.chunk.ChunkNibbleArray;
-
 import net.minecraft.world.chunk.ChunkSection;
-
 import net.minecraft.world.chunk.PalettedContainer;
-
 import net.minecraft.world.chunk.WorldChunk;
-
 import net.minecraft.world.chunk.light.LightingProvider;
-
 import org.apache.commons.lang3.tuple.Pair;
-
 import org.apache.logging.log4j.LogManager;
-
 import org.apache.logging.log4j.Logger;
-
 import org.jetbrains.annotations.Nullable;
 
-
-
 import java.util.Arrays;
-
 import java.util.EnumSet;
-
+import java.util.Iterator;
 import java.util.Map;
-
 import java.util.Objects;
-
 import java.util.function.Supplier;
-
-
-
 public class ChunkSerializer {
 
     private static final Logger LOGGER = LogManager.getLogger();
@@ -375,9 +337,27 @@ public class ChunkSerializer {
         ChunkNibbleArray[] blockLight = new ChunkNibbleArray[chunkSections.length + 2];
         ChunkNibbleArray[] skyLight = new ChunkNibbleArray[chunkSections.length + 2];
         LightingProvider lightingProvider = world.getChunkManager().getLightingProvider();
-        for (int y = lightingProvider.getBottomY(), i = 0; y < lightingProvider.getTopY(); y++, i++) {
-            blockLight[i] = lightingProvider.get(LightType.BLOCK).getLightSection(ChunkSectionPos.from(chunkPos, y));
-            skyLight[i] = lightingProvider.get(LightType.SKY).getLightSection(ChunkSectionPos.from(chunkPos, y));
+        LightData initialLightData = WorldChunkExt.get(original).bobby_getInitialLightData();
+        if (initialLightData != null) {
+            Iterator<byte[]> blockNibbles = initialLightData.getBlockNibbles().iterator();
+            Iterator<byte[]> skyNibbles = initialLightData.getSkyNibbles().iterator();
+            for (int y = lightingProvider.getBottomY(), i = 0; y < lightingProvider.getTopY(); y++, i++) {
+                boolean hasBlockData = initialLightData.getInitedBlock().get(i);
+                boolean isBlockZero = initialLightData.getUninitedBlock().get(i);
+                if (hasBlockData || isBlockZero) {
+                    blockLight[i] = hasBlockData ? new ChunkNibbleArray(blockNibbles.next().clone()) : new ChunkNibbleArray();
+                }
+                boolean hasSkyData = initialLightData.getInitedSky().get(i);
+                boolean isSkyZero = initialLightData.getUninitedSky().get(i);
+                if (hasSkyData || isSkyZero) {
+                    skyLight[i] = hasSkyData ? new ChunkNibbleArray(skyNibbles.next().clone()) : new ChunkNibbleArray();
+                }
+            }
+        } else {
+            for (int y = lightingProvider.getBottomY(), i = 0; y < lightingProvider.getTopY(); y++, i++) {
+                blockLight[i] = lightingProvider.get(LightType.BLOCK).getLightSection(ChunkSectionPos.from(chunkPos, y));
+                skyLight[i] = lightingProvider.get(LightType.SKY).getLightSection(ChunkSectionPos.from(chunkPos, y));
+            }
         }
 
         FakeChunk fake = new FakeChunk(world, chunkPos, chunkSections);
@@ -423,3 +403,4 @@ public class ChunkSerializer {
         LOGGER.error("Recoverable errors when loading section [" + chunkPos.x + ", " + y + ", " + chunkPos.z + "]: " + message);
     }
 }
+

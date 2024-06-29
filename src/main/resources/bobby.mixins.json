@@ -9,11 +9,13 @@
     "BiomeAccessAccessor",
     "ChunkLightProviderMixin",
     "ClientChunkManagerMixin",
+    "ClientPlayNetworkHandlerMixin",
     "ClientSettingsC2SPacketMixin",
     "GameOptionsMixin",
     "GameRendererMixin",
     "IntegratedServerMixin",
     "MinecraftClientMixin",
+    "WorldChunkMixin",
     "sodium.SodiumChunkManagerMixin",
     "sodium.SodiumClientPlayNetworkHandlerMixin",
     "sodium.SodiumGameOptionPagesMixin"
