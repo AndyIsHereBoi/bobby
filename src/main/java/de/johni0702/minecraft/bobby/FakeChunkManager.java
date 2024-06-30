@@ -2,6 +2,7 @@ package de.johni0702.minecraft.bobby;
 
 import de.johni0702.minecraft.bobby.ext.ChunkLightProviderExt;
 import de.johni0702.minecraft.bobby.ext.ClientChunkManagerExt;
+import de.johni0702.minecraft.bobby.ext.ClientPlayNetworkHandlerExt;
 import de.johni0702.minecraft.bobby.mixin.BiomeAccessAccessor;
 import io.netty.util.concurrent.DefaultThreadFactory;
 import it.unimi.dsi.fastutil.longs.Long2LongMap;
@@ -12,6 +13,7 @@ import it.unimi.dsi.fastutil.longs.Long2ObjectMaps;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ObjectIterator;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.network.ClientPlayNetworkHandler;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.network.ServerInfo;
 import net.minecraft.client.world.ClientChunkManager;
@@ -308,14 +310,31 @@ public class FakeChunkManager {
             LightingProvider lightingProvider = clientChunkManager.getLightingProvider();
             ChunkLightProviderExt blockLightProvider = ChunkLightProviderExt.get(lightingProvider.get(LightType.BLOCK));
             ChunkLightProviderExt skyLightProvider = ChunkLightProviderExt.get(lightingProvider.get(LightType.SKY));
-            for (int i = 0; i < chunk.getSectionArray().length; i++) {
-                int y = world.sectionIndexToCoord(i);
-                if (blockLightProvider != null) {
-                    blockLightProvider.bobby_removeSectionData(ChunkSectionPos.asLong(x, y, z));
+            // See the comment above the bobby_queueUnloadFakeLightDataTask implementation
+            Runnable unloadLightData = () -> {
+                for (int i = 0; i < chunk.getSectionArray().length; i++) {
+                    int y = world.sectionIndexToCoord(i);
+                    if (blockLightProvider != null) {
+                        blockLightProvider.bobby_removeSectionData(ChunkSectionPos.asLong(x, y, z));
+                    }
+                    if (skyLightProvider != null) {
+                        skyLightProvider.bobby_removeSectionData(ChunkSectionPos.asLong(x, y, z));
+                    }
                 }
-                if (skyLightProvider != null) {
-                    skyLightProvider.bobby_removeSectionData(ChunkSectionPos.asLong(x, y, z));
-                }
+            };
+            // 1.18.2: the network handler is reachable straight from the client (upstream reads it off the world)
+            ClientPlayNetworkHandler networkHandler = client.getNetworkHandler();
+            if (willBeReplaced && networkHandler != null) {
+                ClientPlayNetworkHandlerExt.get(networkHandler).bobby_queueUnloadFakeLightDataTask(() -> {
+                    if (fakeChunks.containsKey(chunkPos)) {
+                        // Real chunk has been unloaded in the meantime and is now a fake chunk again, that fake
+                        // chunk will have loaded its own fake light, so we shouldn't unload it.
+                        return;
+                    }
+                    unloadLightData.run();
+                });
+            } else {
+                unloadLightData.run();
             }
 
             clientChunkManagerExt.bobby_onFakeChunkRemoved(x, z);
