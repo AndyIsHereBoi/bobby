@@ -76,7 +76,7 @@ public abstract class ClientChunkManagerMixin implements ClientChunkManagerExt {
         }
     }
 
-    @Inject(method = "loadChunkFromPacket", at = @At("HEAD"))
+    @Inject(method = "loadChunkFromPacket", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/world/ClientChunkManager$ClientChunkMap;getIndex(II)I"))
     private void bobbyUnloadFakeChunk(int x, int z, PacketByteBuf buf, NbtCompound nbt, Consumer<ChunkData.BlockEntityVisitor> consumer, CallbackInfoReturnable<WorldChunk> cir) {
         if (bobbyChunkManager == null) {
             return;
@@ -96,6 +96,9 @@ public abstract class ClientChunkManagerMixin implements ClientChunkManagerExt {
         // it here as well and thereby cancel out the above unload.
         bobby_onFakeChunkAdded(x, z);
 
+        // Stage 3 NOTE: when the multi-world `fingerprint(chunk)` call is ported, it must be guarded with
+        // `WorldChunk chunk = cir.getReturnValue(); if (chunk == null) return;` - that is the other half of
+        // upstream's fix for #313 (server sending an out-of-bounds chunk leaves the return value null).
         bobby_resumeChunkStatusListener();
     }
 
