@@ -149,7 +149,7 @@ public class FakeChunkStorage extends VersionedChunkStorage {
                 MinecraftClient client = MinecraftClient.getInstance();
                 client.submit(() -> {
                     TranslatableText text = new TranslatableText(writeable ? "bobby.upgrade.required" : "bobby.upgrade.fallback_world");
-                    client.submit(() -> client.inGameHud.addChatMessage(MessageType.SYSTEM, text, Util.NIL_UUID));
+                    client.inGameHud.addChatMessage(MessageType.SYSTEM, text, Util.NIL_UUID);
                 });
             }
             return null;
