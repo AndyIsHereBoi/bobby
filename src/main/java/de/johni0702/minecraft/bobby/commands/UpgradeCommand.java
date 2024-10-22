@@ -53,7 +53,9 @@ public class UpgradeCommand implements Command<FabricClientCommandSource> {
                     source.sendError(Text.of(e.getMessage()));
                 }
                 if (worlds != null) {
-                    worlds.markAsUpToDate(storage);
+                    client.execute(() -> {
+                        worlds.markAsUpToDate(storage);
+                    });
                 }
             }
             client.submit(() -> {
