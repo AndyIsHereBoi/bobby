@@ -73,13 +73,17 @@ public class FakeChunkManager {
         this.clientChunkManager = clientChunkManager;
         this.clientChunkManagerExt = (ClientChunkManagerExt) clientChunkManager;
 
+        String serverName = getCurrentWorldOrServerName();
+        if (serverName.isEmpty()) {
+            serverName = "<empty>";
+        }
         long seedHash = ((BiomeAccessAccessor) world.getBiomeAccess()).getSeed();
         RegistryKey<World> worldKey = world.getRegistryKey();
         Identifier worldId = worldKey.getValue();
         Path storagePath = client.runDirectory
                 .toPath()
                 .resolve(".bobby")
-                .resolve(getCurrentWorldOrServerName())
+                .resolve(serverName)
                 .resolve(seedHash + "")
                 .resolve(worldId.getNamespace())
                 .resolve(worldId.getPath());
