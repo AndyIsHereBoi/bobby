@@ -98,7 +98,6 @@ public class FakeChunkManager {
         }
         BobbyConfig config = Bobby.getInstance().getConfig();
 
-        String serverName = getCurrentWorldOrServerName(((ClientWorldAccessor) world).getNetworkHandler());
         long seedHash = ((BiomeAccessAccessor) world.getBiomeAccess()).getSeed();
         RegistryKey<World> worldKey = world.getRegistryKey();
         Identifier worldId = worldKey.getValue();
@@ -110,10 +109,9 @@ public class FakeChunkManager {
         } else {
             storagePath = FileSystemUtils.resolveSafeDirectoryName(storagePath, serverName);
         }
-        storagePath = storagePath
-                .resolve(seedHash + "")
-                .resolve(worldId.getNamespace())
-                .resolve(worldId.getPath());
+        storagePath = storagePath.resolve(seedHash + "");
+        storagePath = FileSystemUtils.resolveChild(storagePath, worldId.getNamespace());
+        storagePath = FileSystemUtils.resolveChild(storagePath, worldId.getPath());
 
         if (config.isDynamicMultiWorld()) {
             worlds = Worlds.getFor(storagePath);
