@@ -17,11 +17,15 @@ public abstract class BackgroundRendererMixin {
     // Upstream injects into the lambda which calls applyFog with FogType.FOG_SKY, but that lambda is a
     // synthetic method ("method_37365") which Mixin cannot resolve on 1.18.2. Clamping the argument of
     // applyFog and filtering on the fog type has the same effect and does not touch the terrain fog.
+    // 1.18.2 note: when a @ModifyVariable handler captures the target's arguments, Mixin requires the COMPLETE
+    // argument list in declaration order after the modified value - you cannot pick just the ones you need.
+    // applyFog(Camera, FogType, float, boolean) therefore needs (value, Camera, FogType, float, boolean), and the
+    // third captured argument is the FogType while the modified value is the first.
     @ModifyVariable(method = "applyFog", at = @At("HEAD"), argsOnly = true)
-    private static float clampSkyFogMaxValue(float viewDistance, Camera camera, BackgroundRenderer.FogType fogType, boolean thickFog) {
+    private static float clampSkyFogMaxValue(float value, Camera camera, BackgroundRenderer.FogType fogType, float viewDistance, boolean thickFog) {
         if (fogType == BackgroundRenderer.FogType.FOG_SKY) {
-            return Math.min(viewDistance, 32 * 16);
+            return Math.min(value, 32 * 16);
         }
-        return viewDistance;
+        return value;
     }
 }

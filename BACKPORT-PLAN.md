@@ -101,6 +101,20 @@ processor validates that the *target method* exists, but never validates `@At` t
 point compiles silently and only fails at runtime, taking the whole client down. Any `@At(INVOKE)` ported to a
 new Minecraft version must be confirmed with `javap -p -c` against the target method's bytecode.
 
+**2. Client crashed during startup - `BackgroundRendererMixin` handler signature was invalid.**
+
+```
+InvalidInjectionException: @ModifyVariable handler method clampSkyFogMaxValue has an invalid signature.
+Found unexpected argument type boolean at index 3, expected float.
+Expected signature: (F Camera FogType F Z)F
+```
+
+Cause: a `@ModifyVariable` handler which captures the target's arguments must declare the **complete**
+argument list, in declaration order, after the modified value - you cannot capture only the subset you need.
+The handler now takes `(float value, Camera, FogType, float viewDistance, boolean thickFog)` and filters on the
+third captured argument. Injector handler signatures are likewise not validated at build time; the other ~20
+handlers were audited by hand and are correct, since each either takes no target arguments or all of them.
+
 ### The main hazard: "version bump" commits are not just version bumps
 
 This is responsible for almost every conflict in Stage 2. Commits such as `f0be144` (Update to 1.19) and
