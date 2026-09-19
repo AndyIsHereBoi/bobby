@@ -1,9 +1,9 @@
 plugins {
-	id("fabric-loom") version "0.10-SNAPSHOT"
+	id("fabric-loom") version "1.7.3"
 	id("maven-publish")
 	id("com.github.breadmoirai.github-release") version "2.2.12"
 	id("com.matthewprenger.cursegradle") version "1.4.0"
-	id("com.modrinth.minotaur") version "1.1.0"
+	id("com.modrinth.minotaur") version "2.+"
 	id("elect86.gik") version "0.0.4"
 }
 
@@ -157,20 +157,25 @@ tasks.withType<com.matthewprenger.cursegradle.CurseUploadTask> {
 	dependsOn(tasks.remapJar)
 }
 
-val publishModrinth by tasks.registering(com.modrinth.minotaur.TaskModrinthUpload::class) {
+tasks.modrinth {
 	dependsOn(tasks.remapJar)
-	token = project.property("modrinth.token") as String
-	projectId = project.property("modrinth.id") as String
-	versionNumber = "${project.version}"
-	uploadFile = tasks.remapJar.flatMap { it.archiveFile }
-	changelog = readChangelog()
-	releaseType = "release"
-	addLoader("fabric")
-	addGameVersion(minecraftVersion)
+}
+
+modrinth {
+	token.set(project.findProperty("modrinth.token") as String? ?: "DUMMY")
+	projectId.set(project.property("modrinth.id") as String)
+	versionNumber.set("${project.version}")
+	uploadFile.set(tasks.remapJar.get())
+	changelog.set(readChangelog())
+	dependencies {
+		optional.project("9s6osm5g") // Cloth Config
+		optional.project("mOgUt4GM") // Mod Menu
+		optional.project("AABBMI") // Sodium
+	}
 }
 
 val publishAll by tasks.registering {
 	dependsOn(tasks.curseforge)
 	dependsOn(tasks.githubRelease)
-	dependsOn(publishModrinth)
+	dependsOn(tasks.modrinth)
 }

@@ -1,0 +1,240 @@
+# Bobby 1.18.2 — Backport Plan (v3.1.1 → v5.2.15)
+
+Goal: bring every **behavioural** improvement made between Bobby 3.1.1 (MC 1.18.2, 2022-03-12) and
+5.2.15 (MC 26.2, 2026-07-12) into a build that **stays on Minecraft 1.18.2**.
+
+- Base source: `bobby-3.1.1/` (extracted from the v3.1.1 tag) — MC 1.18.2, Yarn `1.18.2+build.2`, Java 17, Loom.
+- Reference source: `bobby-upstream/` (full clone, all tags) and the 26.2 workspace repo.
+- Superset: **162 commits, 69 files, +4123 / −1030 lines** between `v3.1.1` and `v5.2.15+mc26.2`.
+  Of those, only **~36 commits are feature/bugfix work**; the rest is Minecraft/Loom/Gradle bumps,
+  version bumps and release chores.
+
+---
+
+## 0. Ground rules
+
+1. **Port behaviour, not the Minecraft bump.** Every `Update to Minecraft X` commit is out of scope.
+2. **Stay on Yarn mappings.** Upstream switched to Mojang mappings only on 2025-12-16 (`ababd15`),
+   i.e. after `v5.2.11`. Commits before that cherry-pick with *zero renaming*; the two later ones need
+   hand-translation.
+3. **Stay on Java 17.** The 26.2 code targets Java 25. Any record/pattern-matching/`SequencedCollection`
+   usage in ported code must be rewritten for 17.
+4. **Keep the 1.18.2 options stack.** `GameOptions.viewDistance` + `Option.RENDER_DISTANCE`
+   (a `DoubleOption`) is a completely different API from the `SimpleOption`/`OptionInstance` code
+   upstream uses today. Only port *semantics* here, never the mixin bodies.
+5. **Do not regenerate the Sodium compat layer.** Sodium 0.5/0.6 do not exist for 1.18.2; the `sodium05`/
+   `sodium06` source sets and the `sodium06` teleport fix are inapplicable.
+
+### Explicitly out of scope
+
+| Upstream change | Why it does not apply |
+| --- | --- |
+| `Update to Minecraft 1.19 / 1.19.2 / 1.19.3 / … / 26.2` (14 commits) | The whole point is to stay on 1.18.2 |
+| `Switch to mojang mappings`, `Convert code via migrateMappings`, `Rename mixins to match mojang names` | Stay on Yarn |
+| `Update to Loom 1.x` / `Update to Gradle 9.x` (8 commits) | Optional; only if the build misbehaves |
+| `Add support for Sodium 0.5` (`8509a82`), `Add support for Sodium 0.6.0` (`dd3353c`), `Drop Sodium 0.5` (`c5c7f3d`) | Sodium 0.5/0.6 do not support 1.18.2 |
+| `Fix chunks not rendering after teleport with Sodium` (`3cd7baf`) | Sodium 0.6 only |
+| `Fix light data being lost when upgrading 1.18 -> 1.19` (`c6f9c20`) | That upgrade path does not exist here (re-evaluate only if the `/bobby upgrade` rewrite needs it) |
+| `Fix render distance resetting after restart if above 32` (`07a72bf`) | **Already fixed in 3.1.1** in the 1.18-compatible form (`ModifyArg` on `DoubleOption.setMax`); it was re-fixed upstream only because 1.19 replaced the options API |
+| `Fix 1.19.3 server address detection` (`05318e4`) | 1.19.3-only regression — verify, but 1.18.2 resolves the address from the connection directly |
+| Release/badge/README/Modrinth-buildscript chores | Cosmetic |
+
+---
+
+## 1. Naming & API translation cheat-sheet
+
+This is where the actual cost lives: upstream code is written against 1.18.2-era **Yarn names** for most
+of the range, but against **later Minecraft APIs**.
+
+### Class renames (Yarn 1.18.2 ← upstream Mojang)
+
+| 1.18.2 (Yarn) | upstream (Mojang) |
+| --- | --- |
+| `ClientChunkManager` | `ClientChunkCache` |
+| `WorldChunk` | `LevelChunk` |
+| `ChunkManager` | `ChunkSource` |
+| `LightingProvider` | `LevelLightEngine` |
+| `ChunkLightProvider` | `LightEngine` |
+| `BackgroundRenderer` | `FogRenderer` |
+| `WorldRenderer` | `LevelRenderer` |
+| `ClientPlayNetworkHandler` | `ClientPacketListener` |
+| `MinecraftClient` | `Minecraft` |
+| `GameOptions` | `Options` |
+| `BiomeAccess` | `BiomeManager` |
+| `NbtCompound` / `NbtList` / `NbtLongArray` | `CompoundTag` / `ListTag` / `LongArrayTag` |
+| `Text` / `TranslatableText` | `Component` |
+| `Identifier` | `ResourceLocation` |
+| `ClientSettingsC2SPacket` | `ClientInformation` |
+| `ChunkNibbleArray` | `DataLayer` |
+| `Util.getMeasuringTimeNano()` | `Util.getNanos()` |
+| `StorageIoWorker` | `IOWorker` |
+| `net.minecraft.world.storage.ChunkSerializer` | `…chunk.storage.ChunkSerializer` |
+| `PalettedContainer.PaletteProvider.BLOCK_STATE` | `Strategy.createForBlockStates(...)` |
+| `RegistryEntry<Biome>` + `Registry.getCodec(...)` | `Holder<Biome>` + `registry.holderByNameCodec()` |
+| `ClientCommandManager` / `CommandManager.literal` | `Commands.literal` |
+| `Option.FRAMERATE_LIMIT.getMax()` | `Options.UNLIMITED_FRAMERATE_CUTOFF` |
+
+### Other 1.18.2 constraints
+
+- `fabric-command-api-v1` (not `v2`) — new `/bobby worlds|create|merge` commands keep using
+  `ClientCommandManager` / `ClientCommandRegistrationCallback`.
+- Mixin config `compatibilityLevel: JAVA_17`; new mixins must be listed in `bobby.mixins.json`
+  under their **Yarn** class names.
+- 1.18.2 chunk NBT is *not* forward-compatible with the 26.2 `ChunkSerializer` output (section palette
+  encoding, biome container, heightmaps, `Lights` handling). Treat the serializer as a rewrite, not a port.
+- `MixinConfigPlugin` must keep detecting Sodium **structurally / via mod-id**, never by MC class name
+  (MC names are remapped; mod class names are not).
+
+---
+
+## 2. Staged plan
+
+Recommended execution order. Each stage compiles and runs on its own.
+
+### Stage 0 — Set up the branch so cherry-picks resolve properly (½ h)
+
+`v3.1.1` is a real upstream commit, so build the port on top of it in the upstream clone — this makes
+`git cherry-pick` do correct 3-way merges instead of you hand-typing diffs.
+
+```sh
+cd bobby-upstream
+git checkout -b mc-1.18.2 v3.1.1          # branch for the backport
+# work here, cherry-picking commit-by-commit
+```
+
+Then (one-off): bump `gradle.properties` `modVersion` to something like `5.2.15.1`, keep
+`minecraftVersion = 1.18.2`, keep the Yarn entry, and set the release name to include the MC version
+(mirrors upstream's own backport tags such as `v5.0.1.1` / `v5.2.4.1+mc1.21`).
+
+Deliverable: empty diff, `./gradlew build` green.
+
+---
+
+### Stage 1 — Quick wins (independent, low risk) — ~1 day
+
+Each of these is a self-contained patch with no new subsystem.
+
+| # | Commit | What to port | 1.18.2 notes |
+| --- | --- | --- | --- |
+| 1.1 | `0a9c23b` | Starlight guard in `MixinConfigPlugin` (`hasStarlight` mod check + `shouldApplyMixin` bail-out + `hasClass` via `MixinService`) | Direct port; package prefix `ca.spottedleaf.starlight.` is identical on 1.18.2 |
+| 1.2 | `1a7ab5f` | `LastAccessFile` corruption guard (#92) | Direct port |
+| 1.3 | `1e7fa2a` | `VisibleChunksTracker` chunk-at-0/0 fix (#205) | Direct port (off-by-one) |
+| 1.4 | `53c73b9` | `FakeChunk` guard against invalid block updates (#341) | Direct port |
+| 1.5 | `c20b228` | New `ClientSettingsC2SPacketMixin` clamping view distance ≤ 127 sent to server (#135) | Rename mixin/target to `net.minecraft.network.packet.c2s.play.ClientSettingsC2SPacket`; packet field is `viewDistance` (int) |
+| 1.6 | `3cfff04` | New `BackgroundRendererMixin` + `WorldRendererMixin` for sky fog with render distance > 32 (#152) | Keep Yarn names; check `BackgroundRenderer.setFogBlack`/`fogY` accessors differ from 1.19 |
+| 1.7 | `b0f30bb` | Rename `cleanupOnClose` → `writeable` | Trivial rename |
+| 1.8 | `eb3f305` | Better `/bobby upgrade` fallback-world message (#68) | Direct port + `en_us.json` key |
+| 1.9 | `60ef5e7` | Unload block entities in fake chunks correctly (#142) | Direct port in `FakeChunkManager` |
+| 1.10 | `7877b1e` | Correct cache folder when server name is empty | Direct port |
+| 1.11 | `83c03b5` | Reload Bobby chunks **without** modifying the game's view distance (4.0.0) | Semantic port; `FakeChunkManager` only |
+| 1.12 | `bbea940` | Don't assume Sodium's renderer is present (#143) | Applies to the 1.18.2 `sodium.SodiumChunkStatusListenerImpl` |
+| 1.13 | `df84a5a` | Fix `world` field in `SodiumChunkManagerMixin` (#206) | Direct port |
+
+Deliverable: `./gradlew build` green, manual smoke test in `runClient`.
+
+---
+
+### Stage 2 — Chunk pipeline rewrite (highest risk) — ~3–5 days
+
+The heart of the mod. Upstream split the monolithic `FakeChunkStorage` into
+`ChunkSerializer` + `FakeChunkStorage` + `util/LimitedExecutor` + `util/RegionPos`, and moved
+serialization off the main thread.
+
+| # | Commit | What to port | 1.18.2 notes |
+| --- | --- | --- | --- |
+| 2.1 | `c8c3f06` | Extract nested `RegionPos` into `util/RegionPos.java` | Mechanical |
+| 2.2 | `c90f1dc` | Simplify `loadTag` return type | Mechanical |
+| 2.3 | `48932ee` | Load fake chunks sorted by distance to player (4.0.1) | Mechanical |
+| 2.4 | `6c477c3` | Move chunk serialization off the main thread + add `util/LimitedExecutor` | Watch for Java >17 APIs; keep `Util.getMeasuringTimeNano()` |
+| 2.5 | **`1c8710a`** | Extract `ChunkSerializer` (468 lines) out of `FakeChunkStorage` | **Rewrite, don't port.** Re-target to 1.18.2 NBT: `NbtCompound`, `NbtList`, `NbtLongArray`, `NbtOps`, `ChunkNibbleArray`, `Heightmap.Type`, `PalettedContainer.PaletteProvider.BLOCK_STATE`, `RegistryEntry<Biome>` codec, `Registry.CODEC`. Keep 3.1.1's serialization shape and adopt only upstream's *fixes* |
+| 2.6 | `a949516` | Write `"Status": "full"` into the chunk NBT (#158) | Direct |
+| 2.7 | `dc98416` | Fix missing light when a real chunk unloads before its light arrives (#290) | Needs `ClientPlayNetworkHandlerMixin` + `WorldChunkMixin` + `ext/WorldChunkExt`; 1.18.2 packet is `LightUpdateS2CPacket` |
+| 2.8 | `9138db9` | Fix newly loaded real chunks flickering black (#290) | Needs `ext/ClientPlayNetworkHandlerExt` |
+| 2.9 | `6f9d7be` | Handle server sending out-of-bounds chunks (#313) | In `ClientChunkManagerMixin`; 1.18.2 has no `ChunkHolder`-based bounds check — adapt |
+| 2.10 | `e5db1a5`, `d9f74e3` | Executor cleanups (`submit` → `execute`) | Apply last in this stage |
+
+Deliverable: chunks round-trip through the cache, `/bobby upgrade` works, no main-thread stalls on
+chunk borders, light is correct after real→fake transitions.
+
+---
+
+### Stage 3 — Dynamic multi-world support (biggest feature) — ~3–4 days
+
+Upstream's v5.1.0/v5.2.0 feature (`cc42d7f` + follow-ups): several logical worlds per physical server,
+with fingerprint-based automatic merging of caches.
+
+| # | Commit | What to port | 1.18.2 notes |
+| --- | --- | --- | --- |
+| 3.1 | `a47a957` | `util/FileSystemUtils` — sanitise world names with illegal characters (#67) | Do this *first*; `Worlds` depends on it |
+| 3.2 | **`cc42d7f`** | New `Worlds.java` (1586 lines): per-world cache dirs, region fingerprinting, merging | Largest single item. Most of it is Bobby's own IO/collection code (fastutil, `IOWorker`), but it *does* instantiate a bare `ClientWorld` to deserialize chunks: adapt to the 1.18.2 `ClientWorld` constructor (`ClientWorld.Properties`, `RegistryEntry<DimensionType>`, `RegistryKey`, profiler, `LevelRenderer`/`BlockRenderManager` args) |
+| 3.3 | `589e1cc` | Allow `ClientWorld` creation off the main thread (#192) — drop the main-thread assertion, synchronise the static `getFor`/`closeAll` maps | Direct port, needed for mods that build fake worlds off-thread |
+| 3.4 | `6a50b8e` | Fix "world contains data from an old version" on first join (#246) | Direct port |
+| 3.5 | `6336732` | Dynamic world management on multi-instance servers (#276) | Direct port |
+| 3.6 | `8ac8f1b` | Multiworld "Network Protocol Error" (#393) | Direct port |
+| 3.7 | `416fd25` | Delete old multi-world caches during cleanup (#399) | Touches `Bobby.java` |
+| 3.8 | `1169564` | **Security:** guard against path traversal by a malicious server (5.2.15) | If the Mojang-mapped version is awkward, cherry-pick the Yarn-named backport from tag **`v5.0.1.1`** instead |
+| 3.9 | `83fa70d` | Fix thread-unsafe `Worlds` call in `UpgradeCommand` | Direct port |
+| 3.10 | new commands | `WorldsCommand`, `CreateWorldCommand`, `MergeWorldsCommand` (+40/34/39 lines) | Translate to `fabric-command-api-v1` (`ClientCommandManager`, `Text.literal`) |
+| 3.11 | config | `BobbyConfig.dynamicMultiWorld` flag + `BobbyConfigScreenFactory` toggle + `en_us.json` keys | Direct port |
+
+Deliverable: enabling `dynamicMultiWorld` in the config produces one cache directory per logical world,
+merges matching caches, and does not corrupt existing caches; the three new commands are registered.
+
+---
+
+### Stage 4 — Translations & polish — ~½ day
+
+- Copy all `assets/bobby/lang/*.json` from `v5.2.15` wholesale: `ru_ru`, `zh_cn`, `pt_br`, `zh_tw`,
+  `tr_tr`, `uk_ua`, `be_by`, `de_de`, `fr_fr`, `ja_jp`, `ko_kr` were added after 3.1.1 (3.1.1 only ships `en_us`).
+- Merge new keys into `en_us.json`: `bobby.upgrade.progress`, the new command/error messages,
+  the `config.bobby.dynamicMultiWorld` entry.
+- `fabric.mod.json`: add `issues` / Modrinth homepage, keep `breaks: sodium <0.3.0` (or tighten to the
+  1.18.2-compatible range), keep `fabricloader >=0.11.6`.
+
+---
+
+### Stage 5 — Verification — ~2–3 days
+
+Build/lint gates:
+
+- `./gradlew build` must produce a remapped jar.
+- **Verify in a real (production) profile, not just `runClient`.** Loom remaps compiled code but not
+  string literals, so any `Class.forName`/name-comparison against a Minecraft class works in dev and
+  fails for users. Check `MixinConfigPlugin`'s class probes only ever name *mod* classes.
+
+Manual test matrix:
+
+| Scenario | Expectation |
+| --- | --- |
+| Server (Paper/vanilla) with view-distance 8, Bobby render distance 32 | Chunks persist and re-render after reconnect |
+| Walk out of range, return after > unload delay | Chunks reload from cache |
+| `/bobby upgrade` on a populated cache | No light loss, no "old version" warning |
+| `dynamicMultiWorld` on a proxy with 2 identically-named worlds | Separate caches, correct merge, no protocol error |
+| Server sending out-of-bounds chunks / bad block updates | No crash, chunk ignored |
+| Malicious server with world name like `..\..\foo` | Refused, nothing written outside the cache root |
+| Sodium 0.4.x installed / not installed / Starlight installed / not installed | No errors in log for absent optional mods |
+| Teleport far away, then back | Cached chunks render, no black chunks |
+| Chunk at 0/0 on join | Loads from cache |
+
+---
+
+## 3. Risk register
+
+| Risk | Severity | Mitigation |
+| --- | --- | --- |
+| `ChunkSerializer` rewrite for 1.18.2 NBT | **High** | Do it as a pure extraction *first* (Stage 2.5) with tests comparing against 3.1.1's existing output byte-for-byte, then layer fixes on |
+| `Worlds.java` + `ClientWorld` construction on 1.18.2 | **High** | Isolate the single `ClientWorld` factory into one method; if the 1.18.2 constructor proves unusable off-thread, fall back to main-thread construction and only port the cache-management half |
+| Java 25 → 17 downgrade of ported code | Medium | Compile as you cherry-pick; `sourceCompatibility = "17"` is already set in 3.1.1's build script |
+| Cherry-pick conflicts from the 1.19+ renames | Medium | Cherry-pick oldest-first; resolve using the cheat-sheet in §1 rather than by hand-diffing |
+| Post-mojang-mapping commits (`3cd7baf`, `1169564`) | Low | Use the Yarn backport tags (`v5.0.1.1`, `v5.2.4.1+mc1.21`, `v5.2.11.1+mc1.21.11`) as the source instead |
+| Regression of existing 1.18.2-only behaviour | Medium | Keep a tag/branch after each stage so any stage can be reverted independently |
+
+---
+
+## 4. Suggested versioning
+
+Mirror upstream's own backport convention:
+
+- `modVersion = 5.2.15.1`, released as `Version 5.2.15.1 for Minecraft 1.18.2`
+- CHANGELOG.md: keep `## 5.2.15.1 (MC 1.18.2)` as a new top section listing the backported fixes
+  (the release tasks in `build.gradle.kts` read the top section, so the format matters).
