@@ -1,0 +1,184 @@
+name: Build and Release
+
+# Manual release workflow. GitHub only offers the "Run workflow" button for workflows that exist on
+# the default branch, so this identical file is kept on both `master` and `mc-1.18.2` - dispatch it
+# from whichever branch you happen to be on. What actually gets built is decided by the `ref` input,
+# not by the branch you dispatch from, so the usual run is simply: Run workflow -> Run.
+#
+# There is intentionally no version bumping here: build.gradle.kts reads the version from
+# gradle.properties and CHANGELOG.md must start with "### <version>", so bump those on the branch
+# being released first, then run this workflow against it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch (or ref) to build and release from'
+        required: true
+        type: string
+        default: 'mc-1.18.2'
+      tag:
+        description: 'Tag to release (empty = "v" + the version in gradle.properties)'
+        required: false
+        type: string
+        default: 'v5.2.15.1+mc1.18.2'
+
+permissions:
+  contents: read
+
+concurrency:
+  # Static group: two dispatches must never publish the same release at once, regardless of which
+  # branch they were started from.
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build mod
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      mod-version: ${{ steps.version.outputs.mod_version }}
+      tag: ${{ steps.version.outputs.tag }}
+      jar: ${{ steps.version.outputs.jar }}
+      ref: ${{ steps.checkout.outputs.ref }}
+      commit: ${{ steps.checkout.outputs.commit }}
+    steps:
+      - name: Checkout
+        id: checkout
+        uses: actions/checkout@v4
+        with:
+          # Read from the input rather than the dispatched ref, so dispatching from `master` still
+          # builds the branch being released.
+          ref: ${{ inputs.ref }}
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Resolve version and release tag
+        id: version
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          BUILD_REF: ${{ steps.checkout.outputs.ref }}
+          BUILD_COMMIT: ${{ steps.checkout.outputs.commit }}
+        run: |
+          set -euo pipefail
+          mod_version=$(sed -n 's/^[[:space:]]*modVersion[[:space:]]*=[[:space:]]*//p' gradle.properties | tr -d ' \r' | head -n1)
+          mc_version=$(sed -n 's/^[[:space:]]*minecraftVersion[[:space:]]*=[[:space:]]*//p' gradle.properties | tr -d ' \r' | head -n1)
+          if [ -z "$mod_version" ] || [ -z "$mc_version" ]; then
+            echo "::error::Could not read modVersion / minecraftVersion from gradle.properties"
+            exit 1
+          fi
+          version="$mod_version+mc$mc_version"
+
+          # The tag is user-supplied, so it reaches the script through the environment rather than
+          # being interpolated straight into it.
+          tag="${INPUT_TAG:-}"
+          if [ -z "$tag" ]; then
+            tag="v$version"
+          fi
+
+          branch="${BUILD_REF#refs/heads/}"
+          expected="v$version"
+          if [ "$tag" != "$expected" ]; then
+            echo "::error::Tag '$tag' does not match ref '$branch': its gradle.properties says $expected."
+            echo "::error::Bump modVersion in gradle.properties + CHANGELOG.md first, or enter $expected."
+            exit 1
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "mod_version=$mod_version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "jar=bobby-$version.jar" >> "$GITHUB_OUTPUT"
+          echo "Releasing \`$tag\` from \`$branch\` at \`${BUILD_COMMIT:0:7}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Build
+        run: ./gradlew build --stacktrace
+
+      - name: Verify the jar
+        run: |
+          set -euo pipefail
+          jar="build/libs/${{ steps.version.outputs.jar }}"
+          if [ ! -f "$jar" ]; then
+            echo "::error::Expected $jar was not produced"
+            ls -l build/libs || true
+            exit 1
+          fi
+          python3 - "$jar" "${{ steps.version.outputs.version }}" <<'PY'
+          import json
+          import sys
+          import zipfile
+
+          path, expected = sys.argv[1], sys.argv[2]
+          with zipfile.ZipFile(path) as archive:
+              meta = json.loads(archive.read("fabric.mod.json"))
+
+          if meta.get("id") != "bobby":
+              sys.exit(f"{path} is not the bobby mod (id={meta.get('id')})")
+          if meta.get("version") != expected:
+              sys.exit(f"{path} declares version {meta.get('version')}, expected {expected}")
+          print(f"OK: {path} is bobby {meta['version']}")
+          PY
+          ls -l "$jar"
+
+      - name: Upload jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: bobby-${{ steps.version.outputs.version }}
+          path: build/libs/${{ steps.version.outputs.jar }}
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Exactly the commit the jar was built from, so the notes match the build.
+          ref: ${{ needs.build.outputs.commit }}
+
+      - name: Download jar
+        uses: actions/download-artifact@v4
+        with:
+          name: bobby-${{ needs.build.outputs.version }}
+          path: dist
+
+      - name: Extract release notes from CHANGELOG.md
+        run: |
+          set -euo pipefail
+          expected='### ${{ needs.build.outputs.mod-version }}'
+          tr -d '\r' < CHANGELOG.md | awk '/^### / { section++ } section == 1' > release-notes.md
+          first=$(head -n1 release-notes.md)
+          # Mirrors readChangelog() in build.gradle.kts, which requires CHANGELOG.md to start with
+          # "### <modVersion>" (the mod version, not the full version with the MC part).
+          if [ "$first" != "$expected" ]; then
+            echo "::error::CHANGELOG.md starts with '$first', expected '$expected'"
+            exit 1
+          fi
+          echo "--- release notes ---"
+          cat release-notes.md
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.build.outputs.tag }}
+          # Without this the tag would be created at the repo's default branch, which would be the
+          # wrong commit whenever the workflow was dispatched from another branch.
+          target_commitish: ${{ needs.build.outputs.commit }}
+          name: Bobby ${{ needs.build.outputs.version }}
+          body_path: release-notes.md
+          files: dist/${{ needs.build.outputs.jar }}
+          fail_on_unmatched_files: true
