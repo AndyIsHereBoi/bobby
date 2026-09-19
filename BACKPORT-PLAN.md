@@ -18,7 +18,7 @@ Goal: bring every **behavioural** improvement made between Bobby 3.1.1 (MC 1.18.
 | --- | --- |
 | 0 — Branch + buildable baseline | **done** |
 | 1 — Quick wins (13 fixes) | **done** |
-| 2 — Chunk pipeline | not started |
+| 2 — Chunk pipeline | **in progress** — 6 of 9 commits landed (`48932ee`, `6c477c3`, `1c8710a`, `c8c3f06`, `c90f1dc`, `a949516`). Remaining: `dc98416`, `9138db9`, `6f9d7be`. |
 | 3 — Dynamic multi-world | not started |
 | 4 — Translations & polish | not started |
 | 5 — Verification | not started |
@@ -48,9 +48,31 @@ therefore well-tested:
 | `53c73b9` | **partial** | Only the `setBlockState` guard was taken; the surrounding `setHeightmap` belongs to a later stage. |
 | all | `CHANGELOG.md` | Always resolved as *ours*; the backport keeps its own changelog. Revisit at Stage 4. |
 | `c20b228`, `3cfff04` | `bobby.mixins.json` | Conflicts resolved by keeping only entries whose `.java` file actually exists, so entries belonging to skipped commits (`ClientWorldAccessor`, `SimpleOptionAccessor`, `ValidatingIntSliderCallbacksAccessor`) are dropped. |
+| `6c477c3` | **adapted** | Kept the synchronous `loadTag` (upstream's async form is a 1.19 API artifact) and standardised on commons-lang3 `Pair`, which MC bundles on 1.18.2 too, so all three files agree on one `Pair` type. |
+| `1c8710a` | **manual extraction** | Merging would have mangled a 320-line region, so the serialization code was cut out of `FakeChunkStorage` (575 → 244 lines) into `ChunkSerializer` by a brace-matched script, preserving upstream's public API (`serialize`, `deserialize`, `loadChunk`, `shallowCopy`, `floodSkylightFromAbove`, `logRecoverableError`) so later commits still line up. The 1.18.2 bodies were kept (e.g. `PalettedContainer.createCodec`, `net.minecraft.util.registry.*`). |
+| `c8c3f06` | **adapted** | Adopted upstream's new `getRegions(Path)` helper and `util/RegionPos`, deleted the inner record, and reverted a leaked `Registries.CHUNK_GENERATOR` back to `Registry.CHUNK_GENERATOR`. |
+| `c90f1dc` | **adapted** | Upstream's intent (drop the storage from `loadTag`'s result) applied to the synchronous form: `loadTag` now returns `NbtCompound` directly. |
+| `a949516` | **adapted** | `Status: "full"` committed; also took the neighbouring `isLightOn` line, which is correct here because our serializer does write per-section `BlockLight`/`SkyLight`. |
+| `dc98416` | **deferred** | Needs genuine 1.18.2 adaptation: `LightData` (1.19.3+) → `LightUpdateS2CPacket`, `net.minecraft.registry.*` → `net.minecraft.util.registry.*`, `LightingProviderExt` → `ChunkLightProviderExt`, plus three new files (`WorldChunkExt`, `ClientPlayNetworkHandlerMixin`, `WorldChunkMixin`). |
 
 **Rule of thumb for the remaining stages:** a Mixin AP warning at build time means the mixin will fail at
 runtime. Treat `warning: Unable to determine descriptor` / `Cannot find target method` as hard errors.
+
+### The main hazard: "version bump" commits are not just version bumps
+
+This is responsible for almost every conflict in Stage 2. Commits such as `f0be144` (Update to 1.19) and
+`a462a9b` (Bump to 1.19.2) look like pure chore commits, but they also absorbed **API-forced refactors**:
+
+- MC 1.19 made `VersionedChunkStorage.getNbt` asynchronous, which is why upstream's `FakeChunkStorage.loadTag`
+  and `FakeChunkManager.loadTag` return futures and why the `storages` list exists. On 1.18.2 the storage API is
+  **synchronous** and must stay that way.
+- They also carried incidental changes that later commits assume are present: a `java.util.List` import, the
+  `isLightOn` NBT field, the javadoc block above `shallowCopy`, `Registries.CHUNK_GENERATOR` (1.19.3+) instead of
+  `Registry.CHUNK_GENERATOR`, and `net.minecraft.registry.*` / `LightData` / `LightingProviderExt` packages.
+
+Consequence: a 3-way cherry-pick can silently pull 1.19+ code into a method body, and the "skip version bumps"
+rule from §0 must be applied to the *commit*, not to the *API* it introduced. Compile after every pick and grep
+for 1.19-only symbols (`net.minecraft.registry.`, `LightData`, `Registries.`, `Registries`, `CompoundTag`).
 
 ---
 
