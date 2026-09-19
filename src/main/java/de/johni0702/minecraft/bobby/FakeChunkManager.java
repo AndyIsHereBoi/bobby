@@ -333,10 +333,10 @@ public class FakeChunkManager {
     }
 
     public Supplier<WorldChunk> save(WorldChunk chunk) {
-        Pair<WorldChunk, Supplier<WorldChunk>> copy = storage.shallowCopy(chunk);
+        Pair<WorldChunk, Supplier<WorldChunk>> copy = ChunkSerializer.shallowCopy(chunk);
         LightingProvider lightingProvider = chunk.getWorld().getLightingProvider();
         saveExecutor.execute(() -> {
-            NbtCompound nbt = storage.serialize(copy.getLeft(), lightingProvider);
+            NbtCompound nbt = ChunkSerializer.serialize(copy.getLeft(), lightingProvider);
             storage.save(chunk.getPos(), nbt);
         });
         return copy.getRight();
@@ -389,7 +389,7 @@ public class FakeChunkManager {
                 return;
             }
             result = Optional.ofNullable(loadTag(x, z))
-                    .map(it -> it.getRight().deserialize(new ChunkPos(x, z), it.getLeft(), world));
+                    .map(it -> ChunkSerializer.deserialize(new ChunkPos(x, z), it.getLeft(), world));
         }
 
         public void complete() {
