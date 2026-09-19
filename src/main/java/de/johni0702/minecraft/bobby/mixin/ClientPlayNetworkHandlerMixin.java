@@ -92,7 +92,11 @@ public abstract class ClientPlayNetworkHandlerMixin implements ClientPlayNetwork
         queuedUnloadFakeLightDataTask = runnable;
     }
 
-    @ModifyArg(method = "onChunkData", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/world/ClientWorld;enqueueChunkUpdate(Ljava/lang/Runnable;)V"))
+    // 1.18.2 note: upstream (1.19+) calls enqueueChunkUpdate directly from onChunkData, but 1.18.2 splits that out
+    // into updateChunk(int, int, LightData), which onChunkData calls right after loadChunk. Targeting onChunkData
+    // here compiles fine (Mixin's annotation processor does not validate @At targets) but fails at runtime with
+    // "Scanned 0 target(s)" and takes the whole client down during startup.
+    @ModifyArg(method = "updateChunk", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/world/ClientWorld;enqueueChunkUpdate(Ljava/lang/Runnable;)V"))
     private Runnable addUnloadFakeLightDataTask(Runnable vanillaLoadLightDataTask) {
         if (queuedUnloadFakeLightDataTask != null) {
             Runnable unloadTask = queuedUnloadFakeLightDataTask;
