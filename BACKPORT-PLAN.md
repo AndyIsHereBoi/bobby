@@ -115,6 +115,36 @@ The handler now takes `(float value, Camera, FogType, float viewDistance, boolea
 third captured argument. Injector handler signatures are likewise not validated at build time; the other ~20
 handlers were audited by hand and are correct, since each either takes no target arguments or all of them.
 
+### CI / release build (`.github/workflows/release.yml`)
+
+Dependency resolution had to be fixed before CI could work at all:
+
+- **Starlight's old ivy URL is dead.** `https://cdn.modrinth.com/data/H8CaAYZC/versions/Starlight 1.0.0:fabric.d0a3220 1.18.x/...`
+  now returns **404** (that URL shape relied on Modrinth's legacy human-readable CDN paths). It is resolved
+  as `maven.modrinth:starlight:1.0.2+1.18.2` from `https://api.modrinth.com/maven` instead.
+- **The dependency is required even though no code references Starlight types.** `ChunkLightProviderMixin`
+  names the Starlight classes only as strings (`@Mixin(targets = {...})`), but Mixin's annotation processor
+  *resolves those strings against the compile classpath*, so removing the dependency fails the build with
+  `Mixin target ca.spottedleaf.starlight.common.light.StarLightInterface$1 could not be found`.
+  Do not "clean up" this dependency again.
+- **A working local build is not evidence that dependencies resolve.** It only worked here because
+  `~/.gradle/caches/...` already contained `com.modrinth.starlight` from earlier upstream builds. Reproduce a
+  clean machine with a throwaway Gradle home: `.\gradlew.bat build -g "$env:TEMP\gradle-clean-sim"`.
+  That is what exposed the 404.
+
+Version plumbing the workflow relies on (verified, don't change casually):
+
+| Thing | Value |
+| --- | --- |
+| Jar name | `build/libs/bobby-<modVersion>+mc<minecraftVersion>.jar` |
+| `fabric.mod.json` version | `<modVersion>+mc<minecraftVersion>` (Loom expands `project.version`) |
+| CHANGELOG.md first line | exactly `### <modVersion>` - `readChangelog()` asserts this **at configuration time** |
+| Release tag | `v<modVersion>+mc<minecraftVersion>`, e.g. `v5.2.15.1+mc1.18.2` |
+
+Pushes to `mc-1.18.2` build the mod and upload the jar as an artifact; pushing a `v*` tag (or a manual run)
+also publishes the GitHub release, using the first `###` section of `CHANGELOG.md` as the body. The workflow
+deliberately does **not** bump versions: bump `gradle.properties` + `CHANGELOG.md`, commit, then tag.
+
 ### The main hazard: "version bump" commits are not just version bumps
 
 This is responsible for almost every conflict in Stage 2. Commits such as `f0be144` (Update to 1.19) and
