@@ -81,6 +81,26 @@ Everything verifiable without launching the game has been checked:
 Runtime verification (the test matrix below) is still outstanding: chunk persistence, multi-world merging and
 the light/flicker fixes have not been executed yet.
 
+### Stage 5 runtime findings (first launch)
+
+**1. Client crashed during startup - `9138db9` injection point was wrong.**
+
+```
+InjectionError: Critical injection failure: Argument modifier method addUnloadFakeLightDataTask(...)
+in bobby.mixins.json:ClientPlayNetworkHandlerMixin from mod bobby failed injection check,
+(0/1) succeeded. Scanned 0 target(s).
+```
+
+Cause: upstream (1.19+) calls `ClientWorld.enqueueChunkUpdate` directly from `onChunkData`, but 1.18.2 splits
+that out into a separate `updateChunk(int, int, LightData)`. Fixed by targeting `updateChunk`.
+The other three `@At(INVOKE)` targets were then verified against real bytecode and are correct:
+`onChunkData`->`loadChunk`, `loadChunkFromPacket`->`getIndex`, `ClientSettingsC2SPacket.write`->`writeByte`.
+
+**Lesson (important):** a warning-free build does **not** prove that injections resolve. Mixin's annotation
+processor validates that the *target method* exists, but never validates `@At` targets - so a stale injection
+point compiles silently and only fails at runtime, taking the whole client down. Any `@At(INVOKE)` ported to a
+new Minecraft version must be confirmed with `javap -p -c` against the target method's bytecode.
+
 ### The main hazard: "version bump" commits are not just version bumps
 
 This is responsible for almost every conflict in Stage 2. Commits such as `f0be144` (Update to 1.19) and
