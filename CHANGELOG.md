@@ -1,3 +1,19 @@
+### 5.2.15.1
+Backport of the changes made between 3.1.1 and 5.2.15 to Minecraft 1.18.2.
+Still in progress - see BACKPORT-PLAN.md for the remaining stages.
+- Fix servers sending invalid block updates for already unloaded chunks (#341)
+- Fix chunk at 0/0 not loading from cache (#205)
+- Fix world not loading when the `last_access` file has become corrupted (#92)
+- Fix sky rendering with render distance greater than 32 (#152)
+- Fix "Invalid client settings" with view distance greater than 127 (#135)
+- Fix crash when Sodium's chunk renderer is not available (#143)
+- Fix unloading of block entities without "Disable Block Entities" (#142)
+- Fix upgrade instructions for fallback world (#68)
+- Fix errors about Starlight in log when Starlight is not installed
+- Fix incorrect cache folder being used when the server name is empty
+- Reload chunks without modifying the game's view distance
+- Build against Gradle 8.10 / Loom 1.7.3 so it can be built with a modern JDK
+
 ### 3.1.1
 - Update to Minecraft 1.18.2
 - Remove dependency on full Confabricate (only including configurate-{core,hocon} now)
