@@ -12,6 +12,12 @@ Still in progress - see BACKPORT-PLAN.md for the remaining stages.
 - Fix errors about Starlight in log when Starlight is not installed
 - Fix incorrect cache folder being used when the server name is empty
 - Reload chunks without modifying the game's view distance
+- Move chunk serialization off the main thread and use a shallow copy instead of a serialize/deserialize round-trip
+- Load fake chunks in order of distance to the player instead of row order
+- Add a `Status` field to the chunk NBT, so the cached region files can be used as a regular world (#158)
+- Fix no light in fake chunks when the real chunk is unloaded before its light data has been loaded (#290)
+- Fix newly loaded real chunks flickering black (#290)
+- Fix missing fake chunks and "Network Protocol Error" when the server sends an out-of-bounds chunk (#313)
 - Build against Gradle 8.10 / Loom 1.7.3 so it can be built with a modern JDK
 
 ### 3.1.1

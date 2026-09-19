@@ -18,7 +18,7 @@ Goal: bring every **behavioural** improvement made between Bobby 3.1.1 (MC 1.18.
 | --- | --- |
 | 0 — Branch + buildable baseline | **done** |
 | 1 — Quick wins (13 fixes) | **done** |
-| 2 — Chunk pipeline | **in progress** — 6 of 9 commits landed (`48932ee`, `6c477c3`, `1c8710a`, `c8c3f06`, `c90f1dc`, `a949516`). Remaining: `dc98416`, `9138db9`, `6f9d7be`. |
+| 2 — Chunk pipeline | **done** — all 9 commits landed (`48932ee`, `6c477c3`, `1c8710a`, `c8c3f06`, `c90f1dc`, `a949516`, `dc98416`, `9138db9`, `6f9d7be`). |
 | 3 — Dynamic multi-world | not started |
 | 4 — Translations & polish | not started |
 | 5 — Verification | not started |
@@ -53,7 +53,9 @@ therefore well-tested:
 | `c8c3f06` | **adapted** | Adopted upstream's new `getRegions(Path)` helper and `util/RegionPos`, deleted the inner record, and reverted a leaked `Registries.CHUNK_GENERATOR` back to `Registry.CHUNK_GENERATOR`. |
 | `c90f1dc` | **adapted** | Upstream's intent (drop the storage from `loadTag`'s result) applied to the synchronous form: `loadTag` now returns `NbtCompound` directly. |
 | `a949516` | **adapted** | `Status: "full"` committed; also took the neighbouring `isLightOn` line, which is correct here because our serializer does write per-section `BlockLight`/`SkyLight`. |
-| `dc98416` | **deferred** | Needs genuine 1.18.2 adaptation: `LightData` (1.19.3+) → `LightUpdateS2CPacket`, `net.minecraft.registry.*` → `net.minecraft.util.registry.*`, `LightingProviderExt` → `ChunkLightProviderExt`, plus three new files (`WorldChunkExt`, `ClientPlayNetworkHandlerMixin`, `WorldChunkMixin`). |
+| `dc98416` | **adapted** | `LightData` turned out to exist in 1.18.2 with an identical API, so this needed almost nothing: `packet.getChunkX()/getChunkZ()` → `getX()/getZ()`, and the import block rebuilt with 1.18.2 registries. The shadowed `ClientPlayNetworkHandler.world` field and `readLightData(int,int,LightData)` both match 1.18.2. |
+| `9138db9` | **adapted** | Upstream calls `LightingProviderExt.bobby_disableColumn` (added by the 1.20.1 bump), which does not exist here; that line was dropped. The fix's own machinery ported as-is, except the network handler is read from `client.getNetworkHandler()` + a null fallback, since 1.18.2 has no `ClientWorldAccessor`. `ClientWorld.enqueueChunkUpdate` exists in 1.18.2, so the `@ModifyArg` injection resolves. |
+| `6f9d7be` | **half-applied** | The substantive half (moving the fake-chunk unload injection to after vanilla's `getIndex` bounds check) applied cleanly. The other half guards `fingerprint(chunk)`, which belongs to Stage 3's multi-world work and does not exist yet - a `Stage 3 NOTE` comment marks the spot. |
 
 **Rule of thumb for the remaining stages:** a Mixin AP warning at build time means the mixin will fail at
 runtime. Treat `warning: Unable to determine descriptor` / `Cannot find target method` as hard errors.
