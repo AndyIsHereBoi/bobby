@@ -1,18 +1,25 @@
 name: Build and Release
 
-# Pushes to the backport branch just build the mod and upload the jar as an artifact.
-# A version tag (v*) or a manual run additionally publishes a GitHub release.
+# Manual release workflow: pick the branch to build in the "Use workflow from" dropdown, optionally
+# override the tag, and run it. The workflow builds that branch and publishes the GitHub release.
+#
 # There is intentionally no version bumping here: build.gradle.kts reads the version from
-# gradle.properties and CHANGELOG.md must start with "### <version>", so bump those in a
-# commit first, then tag that commit.
+# gradle.properties and CHANGELOG.md must start with "### <version>", so bump those on the branch
+# first, then run this workflow against it.
+#
+# Heads-up: GitHub only offers the "Run workflow" button for workflows that exist on the repo's
+# default branch. This fork's default branch is `master` while this file only lives on `mc-1.18.2`,
+# so if the button is missing either make `mc-1.18.2` the default branch of the fork
+# (Settings -> General -> Default branch) or copy this file onto the default branch.
 
 on:
-  push:
-    branches:
-      - mc-1.18.2
-    tags:
-      - 'v*'
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (empty = "v" + the version in gradle.properties)'
+        required: false
+        type: string
+        default: 'v5.2.15.1+mc1.18.2'
 
 permissions:
   contents: read
@@ -43,8 +50,10 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Read version from gradle.properties
+      - name: Resolve version and release tag
         id: version
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
           mod_version=$(sed -n 's/^[[:space:]]*modVersion[[:space:]]*=[[:space:]]*//p' gradle.properties | tr -d ' \r' | head -n1)
@@ -54,22 +63,26 @@ jobs:
             exit 1
           fi
           version="$mod_version+mc$mc_version"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "mod_version=$mod_version" >> "$GITHUB_OUTPUT"
-          echo "tag=v$version" >> "$GITHUB_OUTPUT"
-          echo "jar=bobby-$version.jar" >> "$GITHUB_OUTPUT"
-          echo "Building $version"
 
-      - name: Check tag matches version
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          set -euo pipefail
-          expected='${{ steps.version.outputs.tag }}'
-          actual="$GITHUB_REF_NAME"
-          if [ "$expected" != "$actual" ]; then
-            echo "::error::Tag '$actual' does not match gradle.properties version '$expected'."
+          # The tag is user-supplied, so it reaches the script through the environment rather than
+          # being interpolated straight into it.
+          tag="${INPUT_TAG:-}"
+          if [ -z "$tag" ]; then
+            tag="v$version"
+          fi
+
+          expected="v$version"
+          if [ "$tag" != "$expected" ]; then
+            echo "::error::Tag '$tag' does not match branch $GITHUB_REF_NAME: gradle.properties says $expected."
+            echo "::error::Bump modVersion in gradle.properties + CHANGELOG.md first, or enter $expected."
             exit 1
           fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "mod_version=$mod_version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "jar=bobby-$version.jar" >> "$GITHUB_OUTPUT"
+          echo "Releasing \`$tag\` from \`$GITHUB_REF_NAME\` at \`${GITHUB_SHA:0:7}\`" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Make gradlew executable
         run: chmod +x ./gradlew
@@ -113,7 +126,6 @@ jobs:
   release:
     name: Publish GitHub release
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: write

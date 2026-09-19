@@ -141,9 +141,15 @@ Version plumbing the workflow relies on (verified, don't change casually):
 | CHANGELOG.md first line | exactly `### <modVersion>` - `readChangelog()` asserts this **at configuration time** |
 | Release tag | `v<modVersion>+mc<minecraftVersion>`, e.g. `v5.2.15.1+mc1.18.2` |
 
-Pushes to `mc-1.18.2` build the mod and upload the jar as an artifact; pushing a `v*` tag (or a manual run)
-also publishes the GitHub release, using the first `###` section of `CHANGELOG.md` as the body. The workflow
-deliberately does **not** bump versions: bump `gradle.properties` + `CHANGELOG.md`, commit, then tag.
+The workflow is **manual-only** (`workflow_dispatch`): in the Actions UI pick the branch in "Use workflow from",
+optionally override the `tag` input (defaults to the current `v<version>`), and run it. It builds that branch,
+refuses to continue if the requested tag does not match that branch's `gradle.properties` version, and then
+publishes the release using the first `###` section of `CHANGELOG.md` as the body. It deliberately does **not**
+bump versions: bump `gradle.properties` + `CHANGELOG.md`, commit, then run it.
+
+GitHub only shows the "Run workflow" button for workflows that exist on the repo's **default branch** - which
+for this fork is `master`, while the file only lives on `mc-1.18.2`. So either set `mc-1.18.2` as the fork's
+default branch or copy the workflow file onto the default branch, otherwise the button will not appear.
 
 ### The main hazard: "version bump" commits are not just version bumps
 
