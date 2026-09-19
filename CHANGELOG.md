@@ -1,6 +1,6 @@
 ### 5.2.15.1
 Backport of the changes made between 3.1.1 and 5.2.15 to Minecraft 1.18.2.
-Still in progress - see BACKPORT-PLAN.md for the remaining stages.
+Not yet released - runtime verification is still outstanding, see BACKPORT-PLAN.md.
 - Fix servers sending invalid block updates for already unloaded chunks (#341)
 - Fix chunk at 0/0 not loading from cache (#205)
 - Fix world not loading when the `last_access` file has become corrupted (#92)
