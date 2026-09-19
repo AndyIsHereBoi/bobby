@@ -14,7 +14,7 @@
     "GameRendererMixin",
     "IntegratedServerMixin",
     "MinecraftClientMixin",
-    "WorldRendererMixin",    "sodium.SodiumChunkManagerMixin",
+    "sodium.SodiumChunkManagerMixin",
     "sodium.SodiumClientPlayNetworkHandlerMixin",
     "sodium.SodiumGameOptionPagesMixin"
   ],
