@@ -18,6 +18,16 @@ Still in progress - see BACKPORT-PLAN.md for the remaining stages.
 - Fix no light in fake chunks when the real chunk is unloaded before its light data has been loaded (#290)
 - Fix newly loaded real chunks flickering black (#290)
 - Fix missing fake chunks and "Network Protocol Error" when the server sends an out-of-bounds chunk (#313)
+- Add support for servers with multiple identically-named worlds (e.g. proxies) (#72)
+  Note: Must be enabled in config (`dynamicMultiWorld`).
+  Adds `/bobby worlds`, `/bobby worlds full`, `/bobby worlds create` and `/bobby worlds merge <source> <target>`.
+- Fix "This world contains data from an old version" on new worlds with Dynamic World Management enabled (#246)
+- Fix dynamic world management on servers with multiple instances (#276)
+- Fix old worlds not being deleted properly during clean up with Dynamic World Management enabled (#399)
+- Fix "Network Protocol Error" when some worlds are not fully matched (#393)
+- Guard against a malicious server overwriting local worlds by guessing their names
+- Fix game crashing/freezing when world name contains illegal characters (#67)
+- Fix compatibility with mods that create fake worlds on background threads (#192)
 - Build against Gradle 8.10 / Loom 1.7.3 so it can be built with a modern JDK
 
 ### 3.1.1
