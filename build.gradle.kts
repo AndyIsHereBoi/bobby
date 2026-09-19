@@ -43,7 +43,10 @@ dependencies {
 	include("com.typesafe:config:$hoconVersion")
 
 	modCompileOnly("com.github.caffeinemc:sodium-fabric:$sodiumVersion")
-	modCompileOnly("com.modrinth.starlight:starlight:$starlightVersion")
+	// Starlight is only referred to by name from @Mixin(targets = ...), but the Mixin annotation processor
+	// resolves those targets against the compile classpath, so the jar still has to be on it.
+	// Upstream's old cdn.modrinth.com ivy URL for it now returns 404, hence Modrinth's Maven repo instead.
+	modCompileOnly("maven.modrinth:starlight:$starlightVersion")
 	modCompileOnly("ca.stellardrift:confabricate:$confabricateVersion")
 	modImplementation("me.shedaniel.cloth:cloth-config-fabric:$clothConfigVersion")
 	modImplementation("com.terraformersmc:modmenu:$modMenuVersion")
@@ -97,17 +100,14 @@ repositories {
 			includeGroup("com.terraformersmc")
 		}
 	}
+	maven("https://api.modrinth.com/maven") {
+		content { includeGroup("maven.modrinth") }
+	}
 	ivy {
 		setUrl("https://github.com/CaffeineMC/")
 		patternLayout { artifact("[artifact]/releases/download/[revision]/[artifact]-[revision](+[classifier])(.[ext])") }
 		metadataSources { artifact() }
 		content { includeGroup("com.github.caffeinemc") }
-	}
-	ivy {
-		setUrl("https://cdn.modrinth.com/data/H8CaAYZC/versions/")
-		patternLayout { artifact("Starlight [revision] 1.18.x/[artifact]-[revision](+[classifier])(.[ext])") }
-		metadataSources { artifact() }
-		content { includeGroup("com.modrinth.starlight") }
 	}
 }
 
