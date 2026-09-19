@@ -141,15 +141,24 @@ Version plumbing the workflow relies on (verified, don't change casually):
 | CHANGELOG.md first line | exactly `### <modVersion>` - `readChangelog()` asserts this **at configuration time** |
 | Release tag | `v<modVersion>+mc<minecraftVersion>`, e.g. `v5.2.15.1+mc1.18.2` |
 
-The workflow is **manual-only** (`workflow_dispatch`): in the Actions UI pick the branch in "Use workflow from",
-optionally override the `tag` input (defaults to the current `v<version>`), and run it. It builds that branch,
-refuses to continue if the requested tag does not match that branch's `gradle.properties` version, and then
-publishes the release using the first `###` section of `CHANGELOG.md` as the body. It deliberately does **not**
-bump versions: bump `gradle.properties` + `CHANGELOG.md`, commit, then run it.
+The workflow is **manual-only** (`workflow_dispatch`): `Actions -> Build and Release -> Run workflow`, then set
+the two inputs and run it. Both are pre-filled for the usual release, so the normal run is just two clicks:
 
-GitHub only shows the "Run workflow" button for workflows that exist on the repo's **default branch** - which
-for this fork is `master`, while the file only lives on `mc-1.18.2`. So either set `mc-1.18.2` as the fork's
-default branch or copy the workflow file onto the default branch, otherwise the button will not appear.
+| Input | Default | Meaning |
+| --- | --- | --- |
+| `ref` | `mc-1.18.2` | Branch/ref that gets built and released (empty tag fallback reads its `gradle.properties`) |
+| `tag` | `v5.2.15.1+mc1.18.2` | Release tag; leaving it empty falls back to `v<version from gradle.properties>` |
+
+What gets built is decided by the `ref` input, **not** by the branch the workflow was dispatched from, so this
+file is kept byte-identical on both `master` and `mc-1.18.2` and can be run from whichever branch you happen to
+be on. GitHub only offers the "Run workflow" button for workflows that exist on the repo's **default branch**
+(here `master`), which is why the copy on `master` exists - when editing this file, edit **both**.
+
+The run refuses to continue if the requested tag does not match the checked-out `ref`'s `gradle.properties`
+version, and publishes the release using the first `###` section of `CHANGELOG.md` as the body, with
+`target_commitish` pinned to the built commit (otherwise the tag would be created at the default branch's HEAD).
+It deliberately does **not** bump versions: bump `gradle.properties` + `CHANGELOG.md` on the branch being
+released, commit, then run it.
 
 ### The main hazard: "version bump" commits are not just version bumps
 
