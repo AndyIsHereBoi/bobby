@@ -3,11 +3,54 @@
 Goal: bring every **behavioural** improvement made between Bobby 3.1.1 (MC 1.18.2, 2022-03-12) and
 5.2.15 (MC 26.2, 2026-07-12) into a build that **stays on Minecraft 1.18.2**.
 
-- Base source: `bobby-3.1.1/` (extracted from the v3.1.1 tag) — MC 1.18.2, Yarn `1.18.2+build.2`, Java 17, Loom.
-- Reference source: `bobby-upstream/` (full clone, all tags) and the 26.2 workspace repo.
+- Base source: tag `v3.1.1` of the upstream clone (MC 1.18.2, Yarn `1.18.2+build.2`, Java 17).
+- Reference: current `master` in the `bobby` workspace repo (MC 26.2, Mojang mappings).
+- Working repo: `C:\Users\Andy\Documents\Code\bobby-1.18.2`, branch `mc-1.18.2`.
 - Superset: **162 commits, 69 files, +4123 / −1030 lines** between `v3.1.1` and `v5.2.15+mc26.2`.
   Of those, only **~36 commits are feature/bugfix work**; the rest is Minecraft/Loom/Gradle bumps,
   version bumps and release chores.
+
+---
+
+## Status
+
+| Stage | State |
+| --- | --- |
+| 0 — Branch + buildable baseline | **done** |
+| 1 — Quick wins (13 fixes) | **done** |
+| 2 — Chunk pipeline | not started |
+| 3 — Dynamic multi-world | not started |
+| 4 — Translations & polish | not started |
+| 5 — Verification | not started |
+
+**Repo:** `C:\Users\Andy\Documents\Code\bobby-1.18.2` — a clone of upstream, on branch `mc-1.18.2`
+(based on tag `v3.1.1`, commit `d94c664`), with `upstream` as the remote. Every backport is a real
+cherry-pick, so `git log` preserves provenance.
+
+### Toolchain change (unavoidable)
+
+The 1.18.2 project originally used Gradle 7.3 + Loom `0.10-SNAPSHOT`, neither of which can run on the
+JDKs available here (21 / 25; there is no JDK 17 installed), and `jcenter()` in `settings.gradle.kts` no
+longer exists. It was bumped to the combination upstream itself used for its 1.21 builds, which is
+therefore well-tested:
+
+- Gradle **8.10** (wrapper), Loom **1.7.3**, Modrinth Minotaur **2.+** (the old `TaskModrinthUpload` API
+  no longer exists in 2.x, so that block was rewritten to the modern DSL)
+- Run Gradle with `JAVA_HOME` pointing at JDK 21; `sourceCompatibility`/`targetCompatibility` stay at 17.
+
+### Deviations from a pure cherry-pick
+
+| Commit | Deviation | Why |
+| --- | --- |
+| `df84a5a` | **skipped** | Fix for a Sodium **0.5**-only design (on that branch the status-listener class does not even exist). 1.18.2 uses Sodium 0.4. |
+| `3cfff04` | **rewritten** | Upstream injects into the lambda calling `applyFog(FOG_SKY, ...)`. That lambda is a *synthetic* method (`method_37365`) which Mixin cannot resolve on 1.18.2 (`Cannot find target method`), even with an explicit descriptor. The clamp now lives in `BackgroundRendererMixin` as a second `@ModifyVariable` on `applyFog`, filtered on `FogType.FOG_SKY` - same effect, and it leaves the terrain fog untouched. Also, 1.18.2's `applyFog` takes **4** args (no `tickDelta`), not 5. |
+| `7877b1e` | **adapted** | 1.18.2 has only the no-arg `getCurrentWorldOrServerName()`, and the cache path re-resolved the name instead of reusing it. The name is now resolved once and reused for both the emptiness check and the path. |
+| `53c73b9` | **partial** | Only the `setBlockState` guard was taken; the surrounding `setHeightmap` belongs to a later stage. |
+| all | `CHANGELOG.md` | Always resolved as *ours*; the backport keeps its own changelog. Revisit at Stage 4. |
+| `c20b228`, `3cfff04` | `bobby.mixins.json` | Conflicts resolved by keeping only entries whose `.java` file actually exists, so entries belonging to skipped commits (`ClientWorldAccessor`, `SimpleOptionAccessor`, `ValidatingIntSliderCallbacksAccessor`) are dropped. |
+
+**Rule of thumb for the remaining stages:** a Mixin AP warning at build time means the mixin will fail at
+runtime. Treat `warning: Unable to determine descriptor` / `Cannot find target method` as hard errors.
 
 ---
 
@@ -91,13 +134,13 @@ of the range, but against **later Minecraft APIs**.
 
 Recommended execution order. Each stage compiles and runs on its own.
 
-### Stage 0 — Set up the branch so cherry-picks resolve properly (½ h)
+### Stage 0 — Set up the branch so cherry-picks resolve properly (done)
 
-`v3.1.1` is a real upstream commit, so build the port on top of it in the upstream clone — this makes
-`git cherry-pick` do correct 3-way merges instead of you hand-typing diffs.
+`v3.1.1` is a real upstream commit, so the port is built directly on top of it — this makes
+`git cherry-pick` do correct 3-way merges instead of hand-typing diffs.
 
 ```sh
-cd bobby-upstream
+cd bobby-1.18.2
 git checkout -b mc-1.18.2 v3.1.1          # branch for the backport
 # work here, cherry-picking commit-by-commit
 ```
