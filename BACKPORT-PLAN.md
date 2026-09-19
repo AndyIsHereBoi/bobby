@@ -20,8 +20,8 @@ Goal: bring every **behavioural** improvement made between Bobby 3.1.1 (MC 1.18.
 | 1 — Quick wins (13 fixes) | **done** |
 | 2 — Chunk pipeline | **done** — all 9 commits landed (`48932ee`, `6c477c3`, `1c8710a`, `c8c3f06`, `c90f1dc`, `a949516`, `dc98416`, `9138db9`, `6f9d7be`). |
 | 3 — Dynamic multi-world | **done** — `cc42d7f`, `589e1cc`, `a47a957`, `6a50b8e`, `6336732`, `83fa70d`, `e5db1a5`, `416fd25`, `8ac8f1b`, `1169564` (`d9f74e3` skipped). |
-| 4 — Translations & polish | not started |
-| 5 — Verification | not started |
+| 4 — Translations & polish | **done** — all 12 language files taken from `v5.2.15`; `en_us.json` already matched key-for-key. `fabric.mod.json` contact block updated (Modrinth homepage + issues). |
+| 5 — Verification | **static checks done, runtime still to do.** See below. |
 
 **Repo:** `C:\Users\Andy\Documents\Code\bobby-1.18.2` — a clone of upstream, on branch `mc-1.18.2`
 (based on tag `v3.1.1`, commit `d94c664`), with `upstream` as the remote. Every backport is a real
@@ -63,6 +63,23 @@ therefore well-tested:
 
 **Rule of thumb for the remaining stages:** a Mixin AP warning at build time means the mixin will fail at
 runtime. Treat `warning: Unable to determine descriptor` / `Cannot find target method` as hard errors.
+
+### Stage 5 progress: static checks (complete)
+
+Everything verifiable without launching the game has been checked:
+
+- Build is green with **zero Mixin AP warnings**, i.e. every `@Inject`/`@ModifyArg`/`@ModifyVariable` target
+  resolves against real 1.18.2 classes. Mixin only fails at runtime *after* warning, so a warning-free build
+  is the strongest static signal available. (This is exactly how the `WorldRendererMixin` problem surfaced.)
+- The **packaged** `bobby.mixins.json` inside the built jar lists precisely the 14 mixin classes compiled into
+  it - verified by reading the jar, not the source tree.
+- **No reflection or hardcoded-class-name hazards anywhere in the source.** Loom remaps compiled code but not
+  string literals, so a `Class.forName("net.minecraft...")` or `getName().contains(...)` check would work in
+  dev and fail for users. `MixinConfigPlugin` detects optional mods by mod id and by the *mod's* package
+  prefix (`ca.spottedleaf.starlight.`), neither of which is ever remapped - so it is safe.
+
+Runtime verification (the test matrix below) is still outstanding: chunk persistence, multi-world merging and
+the light/flicker fixes have not been executed yet.
 
 ### The main hazard: "version bump" commits are not just version bumps
 
